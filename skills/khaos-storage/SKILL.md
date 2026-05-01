@@ -41,13 +41,22 @@ curl -fsSL https://khaosstorage.com/install | sh
 
 This drops `khaos-storage` and `khs` into `~/.local/bin`. Requires Node 20+. After install, verify with `khs --version`.
 
+### When the CLI is already installed: use `khs update`
+
+For an in-place upgrade once the CLI is on `$PATH`, prefer the built-in command — same effect as the one-liner but more discoverable and doesn't ask the user to re-paste a curl pipeline:
+
+```bash
+khs update          # re-runs the installer in place
+khs update --check  # prints the installer URL without running it
+```
+
 ### When to install
 
 If `khs --version` returns "command not found" (exit 127) the CLI isn't installed. Install before running anything else.
 
 ### When to upgrade
 
-Run the same one-liner when:
+Run `khs update` (or the install one-liner if `khs` isn't on PATH yet) when:
 
 - The user reports a behavior described as fixed in a release later than `khs --version` reports.
 - A `khs` command emits an output line like `update available: …` or fails with a message instructing an upgrade.
@@ -230,6 +239,19 @@ Keys minted with `khs keys create` print the raw key once. The agent should trea
 
 Config lives at `~/.khaos/config.json` (mode 600).
 
+### Maintenance
+
+| User intent | Command |
+| --- | --- |
+| Re-run processors for one asset | `khs reprocess <asset_id>` |
+| Backfill metadata across the catalog | `khs reprocess --all` |
+| Backfill only one type | `khs reprocess --all --type image` (also `video`, `audio`, `file`) |
+| Use a smaller batch (slower, easier on rate limits) | `khs reprocess --all --limit 25` |
+
+Reprocess re-fires XIFty / EXIF extraction and (for images / videos) the thumbnail + preview generators. Idempotent — safe to run repeatedly. Useful right after a XIFty or processor upgrade lands so older uploads pick up new metadata fields (e.g. `captured_at` for PNG screenshots, which only started extracting in XIFty 0.1.13).
+
+The bulk variant is paginated server-side; the CLI loops through batches automatically and prints a running tally. For a 1 000-asset catalog plan on 20–40 seconds. Skips non-active assets (counted as "skipped" in the tally) so a stuck upload won't error the whole run.
+
 ## Failure recovery
 
 | Symptom | Action |
@@ -238,8 +260,9 @@ Config lives at `~/.khaos/config.json` (mode 600).
 | `403 insufficient_scope` | The current key lacks the scope for that call. Tell the user to mint a new key with `khs keys create --scope write` (or `admin` for managing other keys / connections). |
 | `404 not_found` for an asset_id | The asset may have been deleted, or the user is on a different account than the one that owns it. Run `khs whoami` to confirm. |
 | `KhaosNetworkError` / connection refused | Check internet. If persistent, `https://app.khaosstorage.com` is the human surface to investigate. |
-| MaxListenersExceeded warning during a large upload | Cosmetic only. The upload still succeeded. Already mitigated; if seen, prompt the user to upgrade the CLI: re-run the install one-liner. |
-| Asset shows up as type `file` instead of `video` / `image` | Older CLI bug, fixed in cli-v0.1.0+. Upgrade with `curl -fsSL https://khaosstorage.com/install | sh` and re-upload. |
+| MaxListenersExceeded warning during a large upload | Cosmetic only. The upload still succeeded. Already mitigated; if seen, prompt the user to run `khs update`. |
+| Asset shows up as type `file` instead of `video` / `image` | Older CLI bug, fixed in cli-v0.1.0+. Upgrade with `khs update` and re-upload. |
+| "Created" date shows the upload time instead of the file's actual creation time | XIFty < 0.1.13 didn't extract PNG timestamps and the older CLI didn't send a client-mtime hint. Run `khs update` first, then `khs reprocess --all` to backfill existing assets with the new extractor output. New uploads land correctly automatically. |
 
 ## Don't do
 
@@ -254,5 +277,6 @@ Config lives at `~/.khaos/config.json` (mode 600).
 - Docs and API reference: `https://khaosstorage.com/docs/`
 - Console (web app, Cognito sign-in, asset detail views): `https://app.khaosstorage.com`
 - API base: `https://api.khaosstorage.com`
+- Share-link host (server-rendered previews for Slack / iMessage / X — `khs spaces url` returns these): `https://share.khaosstorage.com/s/<short>` for spaces, `https://share.khaosstorage.com/u/<handle>` for profiles
 - SDK install (TypeScript / Node): `npm i https://khaosstorage.com/sdk/latest.tgz`
 - CLI install: `curl -fsSL https://khaosstorage.com/install | sh`
