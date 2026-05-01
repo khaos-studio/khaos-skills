@@ -148,6 +148,31 @@ Default-excluded paths: `node_modules`, `.git`, `.Trash`, `dist`, `build`, `__py
 
 Ctrl-C gracefully stops; in-flight uploads finish first.
 
+### Daemon (survive reboot)
+
+`khs daemon` installs a `khs watch` as a user-scope service: a launchd LaunchAgent on macOS, a systemd `--user` unit on Linux. The watch keeps running after the terminal closes, after a logout, and after a reboot.
+
+| User intent | Command |
+| --- | --- |
+| Install + start | `khs daemon install <name> <path> [...watch flags]` |
+| List installed daemons + state | `khs daemon list` |
+| Show one daemon's status | `khs daemon status <name>` |
+| Stop without uninstalling | `khs daemon stop <name>` |
+| Resume after stop | `khs daemon start <name>` |
+| Tail the log | `khs daemon logs <name> -f` |
+| Stop + remove | `khs daemon uninstall <name>` |
+
+Examples:
+
+```bash
+khs daemon install desktop ~/Desktop --screencaps --space "Screen Captures"
+khs daemon install sdcard /Volumes/KHAOS2/DCIM --drone --poll 30
+khs daemon list
+khs daemon logs desktop -f
+```
+
+Records live at `~/.khaos/daemons/<name>.json`; logs at `~/.khaos/logs/<name>.log`. The agent should never invoke this for one-off uploads — `khs sync` is the right call there. Reach for `daemon` only when the user explicitly asks to back up "in the background" / "all the time" / "automatically".
+
 ### Share via a Space
 
 A "space" is how Khaos shares assets externally. Public space = anyone with the URL. Protected space = anyone with the URL plus a password.
