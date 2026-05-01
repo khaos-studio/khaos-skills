@@ -116,6 +116,38 @@ The user can mint a key from the console at `https://app.khaosstorage.com` (Sett
 
 The CLI handles single-PUT under 100 MiB and multipart above automatically. Total in-flight part PUTs are bounded at 4 across all parallel files, so it is safe to pass dozens of files; the network won't be overwhelmed.
 
+### Sync (recommended for folders + backups)
+
+`khs sync` is the right command for **"make sure everything in this folder is on Khaos."** It dedupes against local state + the server's content hash, so re-running is cheap (only changed files re-upload). Prefer it over `khs upload <dir>/*` for any backup-shaped task.
+
+| User intent | Command |
+| --- | --- |
+| Back up a folder, idempotent | `khs sync <path> --media` |
+| SD-card ingest | `khs sync /Volumes/<card>/DCIM --drone --space "<name>"` |
+| Screen-capture archive | `khs sync ~/Desktop --screencaps --space "Screen Captures"` |
+| Preview without uploading | `khs sync <path> --media --dry-run` |
+| Move sources after upload | `khs sync <path> --media --move-to ~/archive` |
+| Limit recursion | `khs sync <path> --max-depth 1` |
+| Skip files modified within N seconds | `khs sync <path> --stability-window 10` |
+
+State lives at `~/.khaos/state/sync-<slug>-<hash>.json` per watch root. Re-runs read this state to skip files whose `(mtime, size)` haven't changed.
+
+Default-excluded paths: `node_modules`, `.git`, `.Trash`, `dist`, `build`, `__pycache__`. Hidden files (anything starting with `.`) are skipped unless `--all`.
+
+### Watch (continuous)
+
+`khs watch` is `khs sync` running on a debounced fs.watch loop. Same flags. Reuses the same state file as `sync`, so a watch resumes where a previous sync left off.
+
+| User intent | Command |
+| --- | --- |
+| Watch Desktop, publish to a space | `khs watch ~/Desktop --screencaps --space "Screen Captures"` |
+| Watch SD card on insert | `khs watch /Volumes/<card>/DCIM --drone` |
+| Reduce churn on slow networks | `khs watch <path> --debounce 5` |
+| Add poll fallback (SMB/NFS) | `khs watch <path> --poll 30` |
+| Skip the initial sync | `khs watch <path> --no-initial` |
+
+Ctrl-C gracefully stops; in-flight uploads finish first.
+
 ### Share via a Space
 
 A "space" is how Khaos shares assets externally. Public space = anyone with the URL. Protected space = anyone with the URL plus a password.
