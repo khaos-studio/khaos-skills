@@ -173,19 +173,28 @@ khs daemon logs desktop -f
 
 Records live at `~/.khaos/daemons/<name>.json`; logs at `~/.khaos/logs/<name>.log`. The agent should never invoke this for one-off uploads — `khs sync` is the right call there. Reach for `daemon` only when the user explicitly asks to back up "in the background" / "all the time" / "automatically".
 
-### Share via a Space
+### Spaces (group, share, or publish)
 
-A "space" is how Khaos shares assets externally. Public space = anyone with the URL. Protected space = anyone with the URL plus a password.
+A space is the grouping primitive. Three visibility modes:
+
+- **private** (default): grouping only, never reachable by URL. Use for "Drone shoots May", "Edits in progress", any internal organization.
+- **public**: anyone with the share URL can view the manifest. Use for public galleries, send-to-client deliveries, any forever-shareable link.
+- **protected**: anyone with the URL plus a password. Use for client-only previews where a leaked URL shouldn't be enough.
+
+Public and protected spaces stay accessible **forever** by default; the owner has to change them or delete them. There's no auto-expiry, and signed URLs inside the manifest are refreshed transparently by the viewer.
 
 | User intent | Command |
 | --- | --- |
-| Upload and immediately share | `khs upload <path> --space "<name>"` |
-| Share existing assets into a space | `khs share <asset_id>... --to "<name>"` |
-| Create a new public space | `khs spaces create --name "<name>" --visibility public` |
-| Create a password-protected space | `khs spaces create --name "<name>" --visibility protected --password "<pw>"` |
-| Get the share URL | `khs spaces url "<name>"` |
+| Group assets without sharing | `khs spaces create --name "<name>"`  (defaults to private) |
+| Create a public share | `khs spaces create --name "<name>" --visibility public` |
+| Create a password-gated share | `khs spaces create --name "<name>" --visibility protected --password "<pw>"` |
+| Upload and group / share in one shot | `khs upload <path> --space "<name>"` |
+| Add existing assets to a space | `khs share <asset_id>... --to "<name>"` |
+| Get the share URL (public / protected only) | `khs spaces url "<name>"` |
 | List spaces | `khs spaces list` |
-| Delete a space (does not delete assets) | `khs spaces delete "<name>"` |
+| Delete a space (assets stay) | `khs spaces delete "<name>"` |
+
+If the user doesn't specify visibility and it isn't obvious from context, default to `private`. Only escalate to `public` when the user clearly says "share" / "send link" / "anyone can view." Escalate to `protected` only when they say "with a password" / "client-only" / "gated."
 
 Space references can be `space_id` (`spc_…`), `short_id` (8 base32 chars), or the exact name. Names with spaces must be quoted.
 
