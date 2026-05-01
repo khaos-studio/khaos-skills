@@ -1,0 +1,131 @@
+---
+name: khaos-storage
+description: Use the khaos-storage CLI (`khs`) to upload, list, share, and manage media on Khaos Storage. Invoke this skill when the user asks to upload files, share media, ingest a folder, list assets, create a sharing space, or generally do anything against khaosstorage.com from the terminal. Also covers first-run install and authorization.
+---
+
+# Khaos Storage CLI skill
+
+Khaos Storage is a media storage service for creatives. The official client is a single-binary CLI named `khaos-storage` (alias `khs`) that authenticates against `https://app.khaosstorage.com` and talks to `https://api.khaosstorage.com`. This skill teaches the agent when and how to use it.
+
+## When to use this skill
+
+Trigger on any of:
+
+- "upload (this | these | my | the) ... to khaos / khaos-storage / khaosstorage"
+- "share this / send this / publish this" combined with mention of khaos
+- "ingest (the SD card | this folder | this footage)" mentioned with khaos
+- "list my assets / show what's on khaos"
+- "create a (public | protected | shared) link / space"
+- "back up (these | my) (videos | photos | clips) to khaos"
+- The user references `khs`, `khaos-storage`, `khaosstorage.com`, `app.khaosstorage.com`, or `api.khaosstorage.com`.
+
+If the user mentions a different storage service (S3, R2, Dropbox, iCloud, Google Drive, Backblaze) without referencing Khaos, do **not** use this skill.
+
+## Bootstrap (first run)
+
+If `khs --version` fails, the CLI isn't installed. Install it before running anything else:
+
+```bash
+curl -fsSL https://khaosstorage.com/install | sh
+```
+
+This drops `khaos-storage` and `khs` into `~/.local/bin`. Requires Node 20+. After install, verify with `khs --version`.
+
+If `khs whoami` returns 401 / `unauthorized`, the user isn't authenticated. Run:
+
+```bash
+khs login
+```
+
+This opens a browser for one-time approval. The user signs in (or is already signed in) at `app.khaosstorage.com`, clicks Approve, and the CLI receives a key over loopback. Don't try to type their password or paste an API key into the terminal yourself; let `khs login` handle it.
+
+## Common task → command map
+
+### Upload
+
+| User intent | Command |
+| --- | --- |
+| Upload one or many files | `khs upload <path>...` |
+| Open the interactive picker | `khs upload` (no args, TTY only) |
+| Upload everything in a folder | `khs upload --dir <path>` to launch the picker rooted there, **or** shell glob: `khs upload <path>/*.mov` |
+| Tag while uploading | `khs upload <path> --tag drone,raw` |
+| Force multipart for testing | `khs upload <path> --multipart` |
+| Skip the SHA-256 hash | `khs upload <path> --no-hash` (auto-skipped above 500 MiB) |
+| Emit ndjson for scripts | `khs upload <path> --json` |
+
+The CLI handles single-PUT under 100 MiB and multipart above automatically. Total in-flight part PUTs are bounded at 4 across all parallel files, so it is safe to pass dozens of files; the network won't be overwhelmed.
+
+### Share via a Space
+
+A "space" is how Khaos shares assets externally. Public space = anyone with the URL. Protected space = anyone with the URL plus a password.
+
+| User intent | Command |
+| --- | --- |
+| Upload and immediately share | `khs upload <path> --space "<name>"` |
+| Share existing assets into a space | `khs share <asset_id>... --to "<name>"` |
+| Create a new public space | `khs spaces create --name "<name>" --visibility public` |
+| Create a password-protected space | `khs spaces create --name "<name>" --visibility protected --password "<pw>"` |
+| Get the share URL | `khs spaces url "<name>"` |
+| List spaces | `khs spaces list` |
+| Delete a space (does not delete assets) | `khs spaces delete "<name>"` |
+
+Space references can be `space_id` (`spc_…`), `short_id` (8 base32 chars), or the exact name. Names with spaces must be quoted.
+
+### List and inspect
+
+| User intent | Command |
+| --- | --- |
+| Show recent assets | `khs ls --limit 20` |
+| Filter by type | `khs ls --type video` (also `image`, `audio`, `file`) |
+| Filter by status | `khs ls --status active` (also `pending`, `failed`, `archived`) |
+| Search by filename / tag | `khs ls --search drone` |
+| Machine-readable | `khs ls --json` (one JSON line per asset) |
+| Who am I | `khs whoami` |
+
+### Manage API keys
+
+| User intent | Command |
+| --- | --- |
+| List keys | `khs keys list` |
+| Create an ingest key (write scope) | `khs keys create --name "<name>" --scope write` |
+| Create a read-only key | `khs keys create --name "<name>" --scope read` |
+| Revoke | `khs keys revoke <key_id>` |
+
+Keys minted with `khs keys create` print the raw key once. The agent should treat that output as a secret: surface it to the user but never echo it back into chat history beyond the immediate message, and never log it.
+
+### Configuration
+
+| User intent | Command |
+| --- | --- |
+| Show current config | `khs config show` |
+| Change API base URL (rare) | `khs config set base-url <url>` |
+| Override at run time | env vars: `KHAOS_API_KEY`, `KHAOS_BASE_URL`, `KHAOS_CONFIG` |
+
+Config lives at `~/.khaos/config.json` (mode 600).
+
+## Failure recovery
+
+| Symptom | Action |
+| --- | --- |
+| `401 unauthorized` | Run `khs login`. The token may have expired. |
+| `403 insufficient_scope` | The current key lacks the scope for that call. Tell the user to mint a new key with `khs keys create --scope write` (or `admin` for managing other keys / connections). |
+| `404 not_found` for an asset_id | The asset may have been deleted, or the user is on a different account than the one that owns it. Run `khs whoami` to confirm. |
+| `KhaosNetworkError` / connection refused | Check internet. If persistent, `https://app.khaosstorage.com` is the human surface to investigate. |
+| MaxListenersExceeded warning during a large upload | Cosmetic only. The upload still succeeded. Already mitigated; if seen, prompt the user to upgrade the CLI: re-run the install one-liner. |
+| Asset shows up as type `file` instead of `video` / `image` | Older CLI bug, fixed in cli-v0.1.0+. Upgrade with `curl -fsSL https://khaosstorage.com/install | sh` and re-upload. |
+
+## Don't do
+
+- Don't paste the user's raw API key into chat output, log files, or any persisted summary.
+- Don't invent endpoints. If the user wants to do something the CLI doesn't expose, point at `https://khaosstorage.com/docs/` for the API reference and let them choose curl or the SDK.
+- Don't manually compute SHA-256 or split files. The CLI does both.
+- Don't run `khs upload` against directories full of irrelevant content (`node_modules`, `.git`, build artifacts) just because the user said "upload this folder." Confirm scope first.
+- Don't skip `--space` if the user clearly asked to share. Uploading without publishing leaves the asset private to the owner.
+
+## Pointers
+
+- Docs and API reference: `https://khaosstorage.com/docs/`
+- Console (web app, Cognito sign-in, asset detail views): `https://app.khaosstorage.com`
+- API base: `https://api.khaosstorage.com`
+- SDK install (TypeScript / Node): `npm i https://khaosstorage.com/sdk/latest.tgz`
+- CLI install: `curl -fsSL https://khaosstorage.com/install | sh`
