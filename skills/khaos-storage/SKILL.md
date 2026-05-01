@@ -7,6 +7,16 @@ description: Use the khaos-storage CLI (`khs`) to upload, list, share, and manag
 
 Khaos Storage is a media storage service for creatives. The official client is a single-binary CLI named `khaos-storage` (alias `khs`) that authenticates against `https://app.khaosstorage.com` and talks to `https://api.khaosstorage.com`. This skill teaches the agent when and how to use it.
 
+## How to invoke
+
+When this skill triggers, follow this order:
+
+1. **Confirm the CLI is installed and current.** Run `khs --version`. If it fails, install. If it succeeds and the user has reported a bug or asked to update, compare the local bundle hash against the published `latest` (see *When to upgrade* below).
+2. **Confirm the user is authenticated.** Run `khs whoami`. If it fails with 401, run `khs login`.
+3. **Pick the right command for the user's intent** from the *Common task → command map* table below. Don't construct API calls by hand.
+4. **Show the command before running it** if it touches more than one file or modifies state. The user expects to see what's about to happen.
+5. **Surface failures with the underlying error code.** Don't paper over a 403 by retrying; tell the user what scope the key needs.
+
 ## When to use this skill
 
 Trigger on any of:
@@ -21,15 +31,57 @@ Trigger on any of:
 
 If the user mentions a different storage service (S3, R2, Dropbox, iCloud, Google Drive, Backblaze) without referencing Khaos, do **not** use this skill.
 
-## Bootstrap (first run)
+## Install or upgrade
 
-If `khs --version` fails, the CLI isn't installed. Install it before running anything else:
+Both flows use the same one-liner. The install script is idempotent: running it on a clean machine installs; running it on an existing install upgrades in place. Always confirm with the user before running it (it touches `~/.local/bin` and `~/.khaos/`), then:
 
 ```bash
 curl -fsSL https://khaosstorage.com/install | sh
 ```
 
 This drops `khaos-storage` and `khs` into `~/.local/bin`. Requires Node 20+. After install, verify with `khs --version`.
+
+### When to install
+
+If `khs --version` returns "command not found" (exit 127) the CLI isn't installed. Install before running anything else.
+
+### When to upgrade
+
+Run the same one-liner when:
+
+- The user reports a behavior described as fixed in a release later than `khs --version` reports.
+- A `khs` command emits an output line like `update available: …` or fails with a message instructing an upgrade.
+- The user explicitly says "update khs" / "upgrade the cli".
+- It's been a while and you want to confirm the user is on the current release before reporting a bug as new.
+
+You can detect outdated state without prompting the user by comparing the installed bundle hash against the published `latest`:
+
+```bash
+LOCAL=$(shasum -a 256 ~/.khaos/khaos-storage.mjs | awk '{print $1}')
+REMOTE=$(curl -fsSL https://khaosstorage.com/cli/khaos-storage-latest.mjs.sha256 | awk '{print $1}')
+[ "$LOCAL" = "$REMOTE" ] && echo "up to date" || echo "update available"
+```
+
+If `update available`, ask the user before re-running the install one-liner. The upgrade is in-place and re-runs preserve the user's `~/.khaos/config.json` (so they stay signed in).
+
+### Pin a specific version
+
+For reproducible CI or to roll back:
+
+```bash
+KHAOS_VERSION=v0.1.0 sh -c "$(curl -fsSL https://khaosstorage.com/install)"
+```
+
+Released versions live at `https://khaosstorage.com/cli/khaos-storage-<version>.mjs`. The install script verifies the SHA-256 of every download.
+
+### Custom install location
+
+```bash
+KHAOS_HOME=/opt/khaos INSTALL_DIR=/usr/local/bin \
+  sh -c "$(curl -fsSL https://khaosstorage.com/install)"
+```
+
+### Authenticate
 
 If `khs whoami` returns 401 / `unauthorized`, the user isn't authenticated. Run:
 
@@ -38,6 +90,15 @@ khs login
 ```
 
 This opens a browser for one-time approval. The user signs in (or is already signed in) at `app.khaosstorage.com`, clicks Approve, and the CLI receives a key over loopback. Don't try to type their password or paste an API key into the terminal yourself; let `khs login` handle it.
+
+If the user is on a non-graphical machine or in SSH:
+
+```bash
+khs login --no-web        # paste-an-API-key prompt
+khs login --key khs_…     # supply directly
+```
+
+The user can mint a key from the console at `https://app.khaosstorage.com` (Settings → API keys) or from another machine with `khs keys create --name <label> --scope write`.
 
 ## Common task → command map
 
